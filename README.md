@@ -13,6 +13,7 @@ Text here
 * an RMarkdown file containing the code
 * the data, in .csv format (collected from @AashitaK 's `nyt-comments` Python package https://github.com/AashitaK/nyt-comments)
 * a .pdf of our written final report
+* a .pdf of our Professor's requirements/prompts for the assignment
 
 Thank you,
 
