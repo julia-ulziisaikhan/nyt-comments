@@ -10,10 +10,10 @@ Text here
 
 ## This repository includes...
 
-* an RMarkdown file containing the code
-* the data, in .csv format (collected from @AashitaK 's `nyt-comments` Python package https://github.com/AashitaK/nyt-comments)
-* a .pdf of our written final report
-* a .pdf of our Professor's requirements/prompts for the assignment
+* `nyt_comments_analysis.Rmd`, the code
+* `nyt_comments_data.csv`, the data, collected from @AashitaK 's `nyt-comments` Python package https://github.com/AashitaK/nyt-comments
+* `final_report.pdf`, our written final report
+* `project_requirements.pdf`, our Professor's requirements/prompts for the assignment
 
 Thank you,
 
