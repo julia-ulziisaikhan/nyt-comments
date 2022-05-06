@@ -1,6 +1,6 @@
 # nyt-comments
 
-Welcome to Julia Ulziisaikhan's and Edgardo Zelaya's GitHub repository for our final project for Professor Wayne Lee's Data Mining class.
+Welcome to Julia Ulziisaikhan's and Edgardo Zelaya's GitHub repository for our New York Times comment text data mining project. This was a final project completed for Professor Wayne Lee's Data Mining class.
 
 ## Project summary
 
