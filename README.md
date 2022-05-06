@@ -8,7 +8,7 @@ Text here
 
 ## This repository includes...
 
-* an RMarkdown file containig the code
+* an RMarkdown file containing the code
 * the data, in .csv format (collected from @AashitaK 's `nyt-comments` Python package https://github.com/AashitaK/nyt-comments)
 * a .pdf of our written final report
 
