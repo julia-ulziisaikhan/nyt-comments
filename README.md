@@ -11,7 +11,8 @@ Text here
 ## This repository includes...
 
 * `nyt_comments_analysis.Rmd` the code
-* `nyt_comments_data.csv` the data, collected from @AashitaK 's `nyt-comments` Python package https://github.com/AashitaK/nyt-comments
+* `processed_data.csv` the data, processed from @AashitaK 's NYT comments and article data https://www.kaggle.com/datasets/aashita/nyt-comments
+* `political_lexicon.csv` the political content lexicon, used to categorize a given article into political or non-political content
 * `final_report.pdf` our written final report
 * `project_requirements.pdf` our Professor's requirements/prompts for the assignment
 
