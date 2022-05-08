@@ -6,7 +6,7 @@ Welcome to Julia Ulziisaikhan's and Edgardo Zelaya's GitHub repository for our N
 
 ## Project summary
 
-We were interested in learning whether the sentiment makeup of comments on news articles can be used to predict if an article’s topic is political. To do this we engineered a polarization metric, and calculated the proportions of comments with negative, positive, and neutral sentiment per article. Our model predictions were adequate, and we found that political articles tended to be more polarized and have higher negative sentiment comments.
+We were interested in the text mining insights that could be gained from a NYT article's comments. We were also interested in capturing polarization, or divisiveness in opinion, in a given comment section. To do this we engineered a polarization metric, and calculated the proportions of comments with negative, positive, and neutral sentiment per article. We found that political articles (compared to non-political articles) and Op-Eds (compared to non-Op-Eds) tended to be both **more polarized** and have **higher negative sentiment** comments and have **lower positive sentiment** comments. With the predictors of sentiment, polarization, and article word count,  our best binary classification model was able to predict whether an article was political or not with 20% classification error, 81% precision, and 86% recall. 
 
 ## This repository includes...
 
