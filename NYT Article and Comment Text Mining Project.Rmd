@@ -1,0 +1,726 @@
+---
+title: "NYT Article and Comment Text Mining & Political News Prediction"
+author: "Julia Ulziisaikhan and Edgardo Zelaya"
+date: "5/7/2022"
+output: html_document
+---
+
+# Table of Contents
+
+0. Required Packages and Data
+
+1. Raw Data Exploratory Analysis
+
+    1.a. Comments: Sentiment Analysis and Word Clouds
+
+    1.b. Articles: NYT's Categorization
+
+2. Data Processing
+
+    2.a. Comment Section Sentiment Makeup
+
+    2.b. Polarization Metric
+
+    2c. Political Content Lexicon
+
+3. Processed Data Analysis
+
+    3.a. General Exploration
+
+    3.b. Evaluation of Polarization Metric and T-Tests
+
+4. Binary Prediction: Is the article political or not?
+
+    4.a. Logistic Regression 
+
+    4.b. Lasso Regression
+
+    4.c. Naive Bayes Regression
+
+    4.d. Comparison of Models' Performance
+    
+    4.e. Subsetting (and out) Op-Ed Articles for Prediction
+
+# 0. Required Packages and Data
+
+```{r, warning=F, message=F}
+library(tidyverse)
+library(ggplot2)
+library(tidytext)
+library(janitor)
+library(caret)
+library(glmnet)
+library(e1071)
+```
+
+
+# 1. Raw Data Exploratory Analysis
+
+## 1.a. Comments: Sentiment Analysis and Word Clouds
+
+We will only explore one month's worth of comments, as the files are really large. There were 243,832 comments for the month of April 2017.
+
+```{r}
+month <- "April2017.csv"
+df_c_eda <- read.csv(paste0("Comments", month)) %>% clean_names()
+nrow(df_c_eda)
+```
+
+The summary functions glimpse() and str() do not do enough summarizing for me, in my opinion. head() is great, but it can look extremely clunky when the cell values are long and the columns are many. For the purposes of this exploratory analysis, I've created my own algorithm that tells us the proportion of NA or blank or unknown values, and the top 3 most common values for each column.
+
+```{r}
+nas <- c("", " ", "n/a", "NA", "N/A", "unknown", "Unknown", NA)
+print("colname / prop_nas / top 3 vals")
+print("------------------")
+for(i in 1:length(colnames(df_c_eda))){
+  colname <- colnames(df_c_eda)[i]
+  num_unique <- length(unique(df_c_eda[,i]))
+  num_nas <- pull(df_c_eda, i) %in% nas %>% sum()
+  prop_nas <- num_nas / nrow(df_c_eda) 
+  if (num_unique > 2 | num_unique < 51){
+    top3 <- 
+      df_c_eda %>% group_by(df_c_eda[,{{i}}]) %>% summarise(n=n()) %>% 
+      arrange(desc(n)) %>% pull(1) %>% head(3) %>% paste(collapse = ", ")
+  } else if (num_unique < 3) {
+    top3 <- "too few cats"
+  } else if (num_unique > 50) {
+    top3 <- "too many cats"
+  }
+
+  str <- paste(colname, "/ ", prop_nas %>% round(2), "/", top3)
+  print(str)
+}
+```
+
+We can see that there are a lot of variables for the comments data, espeically pertaining to the dates of creation, approval, and updating; in addition to metadata about the commenter (name, id, location, whether and who it is in reply to). The fields `user_title`, `user_url`, and `section_name` are the variables with significant missing data. We will use `article_id` in order to join articles with comments.
+
+
+## 1.b. Articles: NYT's Categorization
+
+Binding all article data frames.
+
+```{r}
+df_a_eda <- bind_rows("ArticlesJan2017.csv" %>% read.csv(), 
+                  "ArticlesJan2018.csv" %>% read.csv(), 
+                  "ArticlesMarch2017.csv" %>% read.csv(), 
+                  "ArticlesMarch2018.csv" %>% read.csv(), 
+                  "ArticlesMay2017.csv" %>% read.csv(), 
+                  "ArticlesApril2017.csv" %>% read.csv(), 
+                  "ArticlesApril2018.csv" %>% read.csv(), 
+                  "ArticlesFeb2017.csv" %>% read.csv(), 
+                  "ArticlesFeb2018.csv" %>% read.csv()) %>% clean_names()
+```
+
+
+```{r}
+nas <- c("", " ", "n/a", "NA", "N/A", "unknown", "Unknown", NA)
+print("colname | prop_nas | top 3 vals")
+print("------------------")
+for(i in 1:length(colnames(df_a_eda))){
+  colname <- colnames(df_a_eda)[i]
+  num_unique <- length(unique(df_a_eda[,i]))
+  num_nas <- pull(df_a_eda, i) %in% nas %>% sum()
+  prop_nas <- num_nas / nrow(df_a_eda) 
+  if (num_unique > 2 | num_unique < 51){
+    top3 <- 
+      df_a_eda %>% group_by(df_a_eda[,{{i}}]) %>% summarise(n=n()) %>% 
+      arrange(desc(n)) %>% pull(1) %>% head(3) %>% paste(collapse = ", ")
+  } else if (num_unique < 3) {
+    top3 <- "too few cats"
+  } else if (num_unique > 50) {
+    top3 <- "too many cats"
+  }
+
+  str <- paste(colname, "| ", prop_nas %>% round(2), "|", top3)
+  print(str)
+}
+```
+
+Now we are looking at the summary for all of the article data. The variables `abstract` and `section_name` have significant missing data. This is unfortunate, because initially I was hoping NYT had a robust topic categorization system, so I wouldn't have to do it myself. 
+
+```{r}
+summary(df_a_eda$article_word_count)
+hist(df_a_eda$article_word_count)
+```
+
+
+```{r}
+df_a_eda %>% group_by(section_name) %>% summarise(n=n()) %>% arrange(-n) %>% head()
+```
+
+
+```{r}
+df_a_eda %>% group_by(new_desk) %>% summarise(n=n()) %>% arrange(-n) %>% head()
+```
+
+
+# 2. Data Processing
+
+Loading in all files.
+
+```{r}
+path <- "C:/Users/Edgardo/Desktop/R/ADM"
+if (getwd() == path) {
+  art_li <- lapply(Sys.glob("Articles*.csv"), read.csv) 
+  com_li <- lapply(Sys.glob("Comments*.csv"), read.csv) 
+} 
+```
+
+We include only the variables we need to save memory.
+
+```{r}
+cols <- 
+  c("article_id, keywords, pub_date, article_word_count, headline, type_of_material", "snippet", "web_url") %>%
+  strsplit(., ", ") %>%
+  unlist()
+
+cols2 <- 
+  c("article_id, user_id, comment_body, approve_date") %>%
+  strsplit(., ", ") %>%
+  unlist()
+
+for (i in 1:9){
+  art_li[[i]] <- subset(art_li[[i]] %>% janitor::clean_names(), select=cols)
+  com_li[[i]] <- subset(com_li[[i]] %>% janitor::clean_names(), select=cols2)
+}
+
+# Removing all objects in environment except for our data
+rm(list=setdiff(ls(), c("art_li", "com_li")))
+```
+
+## 2.a. Comment Section Sentiment Makeup
+
+Here we create our new variables.
+
+We turn our text data that was in string format to single-token-per-row format, using `unnest_tokens()`. We also remove stop words.
+
+```{r}
+#Function to view word-level sentiment
+tidytext_fmt <- 
+  function(data, lexicon="afinn"){
+    data %>%
+    janitor::clean_names() %>% 
+    unnest_tokens(tbl=., 
+                  output=word, 
+                  input=comment_body, 
+                  to_lower = TRUE) %>%
+    dplyr::anti_join(stop_words, by="word")  %>% 
+    inner_join(get_sentiments(lexicon), by="word")
+  }
+
+#Function to view comment-level sentiment
+sentiment_anl <- function(data){
+  tidytext_fmt(data) %>%
+  group_by(article_id, user_id) %>%
+  summarize(value = sum(value)) %>%
+  suppressMessages() %>%
+  mutate(sentiment = case_when(
+  value > 0 ~ "pos",
+  value == 0 ~ "neu",
+  value < 0 ~ "neg"))
+}
+```
+
+## 2.b. Polarization Metric
+
+The `polarization` metric is calculated by taking `neg` (the proportion of comments of negative sentiment per article), dividing it by the `pos`, positive sentiment proportion of comments, then subtracting 1. Then you add `neu`, neutral sentiment proportion of comments, to that number. This means that the closer `polarization` is to 0, the more polarization it has.
+
+```{r}
+#Function to view article-level sentiment
+article_bkdwn <- function(data, pivot=TRUE){
+  
+  df <- 
+    sentiment_anl(data) %>%
+    group_by(article_id, sentiment) %>% 
+    summarize(n=n()) %>%
+    suppressMessages() %>%
+    group_by(article_id) %>%
+    dplyr::mutate(num_comments=sum(n), percent = n / num_comments)
+  
+  if (pivot==TRUE){
+    df %>% 
+    dplyr::select(-n) %>%
+    tidyr::pivot_wider(data=., 
+                names_from = sentiment, 
+                values_from = percent) %>%
+    # CALCULATION OF POLARIZATION SCORE:
+    mutate(polarization = (neg / pos - 1) + neu )
+    }
+  
+  else if (pivot==FALSE){
+    df
+  }
+}
+
+#String cleaner
+string_cleaner <-
+  function(string){
+    #removes punc
+    str_replace_all(string, "[[:punct:]]", "") %>%
+      #removes slashes
+      gsub("[^0-9A-Za-z///' ]","'" , ., ignore.case = FALSE) %>%
+      gsub('"', "", .) %>%
+      gsub("'", "", .) %>%
+      #turns to lower case
+      tolower()
+  }
+
+# Date Time function
+date_time <- 
+  function(string){
+    as.POSIXct(string, format="%Y-%m-%d %H:%M:%S", tz="UTC")
+  }
+
+#Main function
+processor <- 
+  function(comment_data, article_data){
+  comment_data <- article_bkdwn(comment_data)
+  article_data <- article_data %>% janitor::clean_names()
+  left_join(article_data, comment_data, by="article_id") %>%
+    filter(!is.na(polarization) & !is.na(neu)) %>% 
+    mutate(
+      pub_date = date_time(pub_date),
+      headline = string_cleaner(headline),
+      keywords = string_cleaner(keywords),
+      snippet = string_cleaner(snippet),
+      oped = ifelse(type_of_material=="Op-Ed", 1, 0),
+      id = article_id,
+      word_count = article_word_count) %>%
+    select(-article_id, -article_word_count, -type_of_material) %>% 
+    relocate(id, .before = keywords) %>%
+    relocate(keywords, .after=word_count) %>%
+    relocate(snippet, .after=keywords) %>%
+    relocate(headline, .after=snippet) %>%
+    relocate(pub_date, .before=keywords) %>% 
+    relocate(word_count, .before=num_comments) %>%
+    relocate(web_url, .after=pub_date) 
+  }
+```
+
+
+```{r}
+for (i in 1:9){
+  vars <- paste("df", i, sep="")
+  assign(vars, 
+         processor(com_li[[i]], art_li[[i]])
+         )
+  message("processed df", i, " of 9")
+}
+```
+
+We create a processed data file, `processed_data.csv`, and remove all variables in environment to conserve space.
+
+```{r}
+df <- 
+  rbind(df1,df2,df3,df4,df5,df6,df7,df8,df9) %>% 
+  write.csv(., file="processed_data.csv")
+```
+
+```{r}
+rm(list = ls())
+```
+
+## 2c. Political Content Lexicon
+
+```{r}
+read.csv("political_lexicon.csv") %>% 
+    pull(1) %>% head()
+```
+
+```{r}
+# Political Classifier Function
+pol_classifier <- function(string){
+  pol_lex <- 
+    read.csv("political_lexicon.csv") %>% 
+    pull(1) %>% 
+    paste(collapse="|")
+  bool <- grepl(pol_lex, string)
+  ifelse(bool == TRUE, 1, 0)
+}
+```
+
+```{r}
+df <- 
+  read.csv("processed_data.csv") %>% 
+  mutate(political = pol_classifier(keywords)) %>%
+  select(-X) %>%
+  relocate(political, .after=oped) %>%
+  unique # somehow duplicate rows are entered 
+
+# write.csv(df, file="processed_data.csv")
+
+glimpse(df)
+```
+
+# 3. Processed Data Analysis
+
+## 3.a. General Exploration
+
+```{r}
+paste("# of articles in data:", nrow(df))
+```
+
+```{r}
+pct <- function(decimal, places = 2){
+  output <- round((decimal * 100), places)
+  return(paste0(output, "%"))
+}
+```
+
+Of all articles...
+
+```{r}
+df %>% group_by(oped) %>% summarise(n = n()) %>% mutate(pct = pct(n/nrow(df)))
+```
+
+```{r}
+df %>% group_by(political) %>% summarise(n = n()) %>% mutate(pct = pct(n/nrow(df)))
+```
+
+Of political articles...
+
+```{r}
+filter(df, political == 1) %>% group_by(oped) %>% summarise(n = n()) %>% mutate(pct = pct(n/nrow(df)))
+```
+
+Of non-political articles...
+
+```{r}
+filter(df, political == 0) %>% group_by(oped) %>% summarise(n = n()) %>% mutate(pct = pct(n/nrow(df)))
+```
+
+```{r}
+pairs(df %>%
+select(word_count, num_comments, neg, neu, pos, polarization))
+
+cor(df %>%
+select(word_count, num_comments, neg, neu, pos, polarization))
+```
+```{r}
+ggplot(df, aes(x=pos)) + geom_histogram(color="darkblue", fill="lightblue") + labs(title= "Histogram of Share of Positive Sentiment")
+ggplot(df, aes(x=neg)) + geom_histogram(color="darkred", fill="red") + labs(title= "Histogram of Share of Negative Sentiment")
+ggplot(df, aes(x=neu)) + geom_histogram(color="darkgreen", fill="lightgreen")+ labs(title= "Histogram of Share of Neutral Sentiment")
+ggplot(df, aes(x=polarization)) + geom_histogram(color="black", fill="purple") + labs(title= "Histogram of Polarization Score")
+```
+
+```{r}
+#neg
+ggplot(df, aes(x=neg, fill=as.factor(political))) +
+geom_density(alpha=0.4) +
+ggtitle("Political vs. Non-Political Articles", "And share of negative sentiment comments") + scale_fill_discrete(name = "Article", labels=c("Not Political", "Political"))
+# pos
+ggplot(df, aes(x=pos, fill=as.factor(political))) +
+geom_density(alpha=0.4) +
+ggtitle("Political vs. Non-Political Articles", "And share of positive sentiment comments")+ scale_fill_discrete(name = "Article", labels=c("Not Political", "Political"))
+#neu
+ggplot(df, aes(x=neu, fill=as.factor(political))) +
+geom_density(alpha=0.4) +
+ggtitle("Political vs. Non-Political Articles", "And share of neutral sentiment comments") + scale_fill_discrete(name = "Article", labels=c("Not Political", "Political"))
+
+```
+
+```{r}
+nop <- df %>%  filter(oped == 0) 
+
+#negative sentiment
+ggplot(nop, aes(x=neg, fill=as.factor(political))) +
+geom_density(alpha=0.4) +
+ggtitle("Political vs. Non-Political Articles, among Non-Op Eds", "And negative sentiment") + scale_fill_discrete(name = "Article", labels=c("Not Political", "Political")) + xlim(-1,2) 
+```
+
+## 3.b. Evaluation of Polarization Metric and T-tests
+
+```{r}
+#polarization scores
+ggplot(df, aes(x=polarization, fill=as.factor(political))) +
+geom_density(alpha=0.4) +
+ggtitle("Political vs. Non-Political Articles", "And polarization scores") + scale_fill_discrete(name = "Article", labels=c("Not Political", "Political")) + xlim(-1,2) 
+#among non-opeds
+ggplot(nop, aes(x=polarization, fill=as.factor(political))) +
+geom_density(alpha=0.4) +
+ggtitle("Political vs. Non-Political Articles, among Non-Op Eds", "And polarization scores") + scale_fill_discrete(name = "Article", labels=c("Not Political", "Political")) + xlim(-1,2) 
+```
+
+```{r}
+#between political and non-political
+a <- df %>% filter(political == 1)
+b <- df %>% filter(political == 0)
+
+t.test(a$neg, b$neg)
+t.test(a$neu, b$neu)
+t.test(a$pos, b$pos)
+t.test(a$polarization, b$polarization)
+
+#between oped and non-oped
+a <- df %>%  filter(oped == 1)
+b <- df %>%  filter(oped == 0)
+
+t.test(a$polarization, b$polarization)
+
+#between political and non-political, among opeds
+a <- df %>%  filter(oped == 1 & political == 1)
+b <- df %>%  filter(oped == 1 & political == 0)
+
+t.test(a$polarization, b$polarization)
+#between political and non-political, among non-opeds
+a <- df %>%  filter(oped == 0 & political == 1)
+b <- df %>%  filter(oped == 0 & political == 0)
+
+t.test(a$polarization, b$polarization)
+```
+
+# 4. Binary Prediction: Is the article political or not?
+
+Removing features not needed for modelling:
+
+Models cannot process POSIX objects, so we take out pub_date. 
+Also remove any text body variables, such as id, keywords, snippet, and headline.
+We remove the prediction variable of interest, as we will contain it in vector y elsewhere.
+
+```{r}
+df_m <- df
+y <- df_m$political
+df_m <- 
+  df %>%
+  select(-pub_date, -id, -keywords, -snippet, -headline, -web_url, -political, -y) 
+
+glimpse(df_m)
+```
+
+Test-train split
+
+```{r}
+class_1 <- which(y == 1)
+class_0 <- which(y == 0)
+
+political_prop <- 0.59
+class_1_test <- sample(class_1, size = 59, replace = FALSE)
+class_0_test <- sample(class_0, size = 41, replace = FALSE)
+
+test_indices <- c(class_1_test, class_0_test)
+test_split <- (1:nrow(df_m) %in% test_indices)
+train_split <- !test_split
+```
+
+Metrics function, to assess quality of predictions
+
+```{r}
+extract_metrics <- function(conf_matrix) {
+    metrics <- c(
+        1 - conf_matrix$overall['Accuracy'],
+        conf_matrix$byClass[c('Precision', 'Recall')]
+    )
+    names(metrics) <- c(
+        'Classification_Error', 'Precision', 'Recall'
+    )
+    return(metrics)
+}
+```
+
+Score to prediction function, to convert any values which are greater than 0.5 to give a predicted class of 1, and any values which are less than or equal to 0.5 to give a predicted class of 0
+
+```{r}
+score_to_pred <- function(score) {
+    return(ifelse(score > 0.5, 1, 0))
+}
+```
+
+Random classification.
+
+```{r}
+y_pred <- rbinom(100, 1, political_prop)
+
+random_class <- confusionMatrix(
+    data = as.factor(y_pred), reference = as.factor(y[test_split]),
+    mode = "prec_recall", positive = '1'
+)
+
+(random_metrics <- extract_metrics(random_class))
+```
+
+
+## 4.a. Logistic Regression 
+
+```{r}
+logCV <- cv.glmnet(x = as.matrix(df_m[train_split, ]), y = y[train_split], family = 'binomial')
+plot(logCV)
+
+
+y_pred <- predict(logCV,type="response", newx = as.matrix(df_m[test_split, ]), s = 'lambda.min') %>% score_to_pred()
+
+logistic_class <- confusionMatrix(
+    data = as.factor(y_pred), reference = as.factor(y[test_split]),
+    mode = "prec_recall", positive = '1'
+)
+
+(logistic_metrics <- extract_metrics(logistic_class))
+```
+
+## 4.b. Lasso Regression
+
+```{r}
+ls <- cv.glmnet(
+    as.matrix(df_m[train_split, ]), y[train_split],
+    alpha = 1, lambda = 10^seq(-5, 0, length.out=50)
+)
+plot(ls)
+```
+
+```{r}
+k <- which(ls$lambda == ls$lambda.1se)
+ls_coefs <- ls$glmnet.fit$beta[, k]
+print(paste(
+    'Proportion of 0 coefficients:', mean(ls_coefs == 0)
+))
+
+```
+
+`neu` was often shrunk, but all the other predictors remain.
+
+```{r}
+ls_coefs_top <- sort(abs(ls_coefs), decreasing = TRUE)
+ls_coefs_top
+```
+
+
+```{r}
+y_pred <- score_to_pred(
+    predict(ls, as.matrix(df_m[test_split, ]))
+)
+
+
+lasso_class <- confusionMatrix(
+    data = as.factor(y_pred), reference = as.factor(y[test_split]),
+    mode = "prec_recall", positive = '1'
+)
+
+(lasso_metrics <- extract_metrics(lasso_class))
+```
+
+## 4.d. Comparison of Models' Performance
+
+```{r}
+metrics_summary <- data.frame(rbind(
+    random_metrics,
+    logistic_metrics,
+    lasso_metrics
+))
+
+rownames(metrics_summary) <- c(
+    'Random Guessing', 'Logistic', 'Lasso'
+)
+
+metrics_summary <- rownames_to_column(metrics_summary, var = "method") %>%
+    as_tibble()
+
+metrics_summary %>%
+    pivot_longer(2:4, names_to = "metric", values_to = "value") %>%
+    ggplot(aes(x = method, y = value)) +
+    geom_col() + facet_grid(metric ~ .) + coord_flip() +
+    labs(x = "Method", y = "Value of Metric") +
+  theme_classic()+ggtitle("Comparing Political Content Prediction Metrics")
+```
+
+
+Logistic and Lasso predictions performed quite well. We will opt for lasso as it is more easy to interpret.
+
+## 4.e. Subsetting (and out) Op-Ed Articles for Prediction
+
+Among op-ed articles:
+
+```{r}
+df_oped <- df %>% filter(oped ==1)
+y_oped <- df_oped$political
+df_oped <- 
+  df_oped %>%
+  select(-pub_date, -id, -keywords, -snippet, -headline, -web_url, -political, -y) 
+
+class_1 <- which(y_oped == 1)
+class_0 <- which(y_oped == 0)
+
+political_prop <- 0.59
+class_1_test <- sample(class_1, size = 59, replace = FALSE)
+class_0_test <- sample(class_0, size = 41, replace = FALSE)
+
+test_indices <- c(class_1_test, class_0_test)
+test_split <- (1:nrow(df_oped) %in% test_indices)
+train_split <- !test_split
+
+ls <- cv.glmnet(
+    as.matrix(df_oped[train_split, ]), y_oped[train_split],
+    alpha = 1, lambda = 10^seq(-5, 0, length.out=50)
+)
+y_pred <- score_to_pred(
+    predict(ls, as.matrix(df_oped[test_split, ]))
+)
+
+lasso_class_oped <- confusionMatrix(
+    data = as.factor(y_pred), reference = as.factor(y_oped[test_split]),
+    mode = "prec_recall", positive = '1'
+)
+
+k <- which(ls$lambda == ls$lambda.1se)
+ls_coefs <- ls$glmnet.fit$beta[, k]
+(ls_coefs_top <- sort(abs(ls_coefs), decreasing = TRUE))
+(lasso_metrics_oped <- extract_metrics(lasso_class_oped))
+```
+
+Among non-op-ed articles:
+
+```{r}
+df_no_oped <- df %>% filter(oped == 0)
+y_oped <- df_no_oped$political
+df_no_oped <- 
+  df_no_oped %>%
+  select(-pub_date, -id, -keywords, -snippet, -headline, -web_url, -political, -y) 
+
+class_1 <- which(y_oped == 1)
+class_0 <- which(y_oped == 0)
+
+political_prop <- 0.59
+class_1_test <- sample(class_1, size = 59, replace = FALSE)
+class_0_test <- sample(class_0, size = 41, replace = FALSE)
+
+test_indices <- c(class_1_test, class_0_test)
+test_split <- (1:nrow(df_no_oped) %in% test_indices)
+train_split <- !test_split
+
+ls <- cv.glmnet(
+    as.matrix(df_no_oped[train_split, ]), y_oped[train_split],
+    alpha = 1, lambda = 10^seq(-5, 0, length.out=50)
+)
+y_pred <- score_to_pred(
+    predict(ls, as.matrix(df_no_oped[test_split, ]))
+)
+
+lasso_class_no_oped <- confusionMatrix(
+    data = as.factor(y_pred), reference = as.factor(y_oped[test_split]),
+    mode = "prec_recall", positive = '1'
+)
+
+k <- which(ls$lambda == ls$lambda.1se)
+ls_coefs <- ls$glmnet.fit$beta[, k]
+(ls_coefs_top <- sort(abs(ls_coefs), decreasing = TRUE))
+(lasso_metrics_no_oped <- extract_metrics(lasso_class_no_oped))
+```
+
+```{r}
+metrics_summary <- data.frame(rbind(
+    lasso_metrics_oped,
+    lasso_metrics_no_oped
+))
+
+rownames(metrics_summary) <- c(
+    'lasso_metrics_only_oped', 'lasso_metrics_no_oped'
+)
+
+metrics_summary <- rownames_to_column(metrics_summary, var = "method") %>%
+    as_tibble()
+
+metrics_summary %>%
+    pivot_longer(2:4, names_to = "metric", values_to = "value") %>%
+    ggplot(aes(x = method, y = value)) +
+    geom_col() + facet_grid(metric ~ .) + coord_flip() +
+    labs(x = "Method", y = "Value of Metric") +
+  theme_classic() +ggtitle("Comparing No Op-Ed Data with Only Op-Ed Data")
+```
