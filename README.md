@@ -10,7 +10,7 @@ Text here
 
 ## This repository includes...
 
-* `nyt_comments_analysis.Rmd` the code
+* `final_dm.Rmd` the code
 * `processed_data.csv` the data, processed from @AashitaK 's NYT comments and article data https://www.kaggle.com/datasets/aashita/nyt-comments
 * `political_lexicon.csv` the political content lexicon, used to categorize a given article into political or non-political content
 * `final_report.pdf` our written final report
