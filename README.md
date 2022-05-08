@@ -6,7 +6,7 @@ Welcome to Julia Ulziisaikhan's and Edgardo Zelaya's GitHub repository for our N
 
 ## Project summary
 
-We were interested in learning whether the sentiment makeup of comments on news articles can be used to predict if an article’s topic is political. To do this we 
+We were interested in learning whether the sentiment makeup of comments on news articles can be used to predict if an article’s topic is political. To do this we engineered a polarization metric, and calculated the proportions of comments with negative, positive, and neutral sentiment per article. Our model predictions were adequate, and we found that political articles tended to be more polarized and have higher negative sentiment comments.
 
 ## This repository includes...
 
