@@ -12,7 +12,7 @@ We are interested in: (a) the text mining insights that can be gained from a NYT
 
 * `final_report.pdf` our written final report
 * `final_code.Rmd` the code
-* `processed_data.csv` the data, processed from @AashitaK 's NYT comments and article data https://www.kaggle.com/datasets/aashita/nyt-comments
+* `processed_data.csv` processed article and comment data, ready to use for analysis, visualization, or modeling
 * `political_lexicon.csv` the political content lexicon, used to categorize a given article into political or non-political content
 * `project_requirements.pdf` our Professor's requirements/prompts for the assignment
 
