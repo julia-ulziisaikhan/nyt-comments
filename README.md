@@ -6,11 +6,11 @@ Welcome to Julia Ulziisaikhan's and Edgardo Zelaya's GitHub repository for our N
 
 ## Project summary
 
-Text here
+We were interested in learning whether the sentiment makeup of comments on news articles can be used to predict if an article’s topic is political. To do this we 
 
 ## This repository includes...
 
-* `final_dm.Rmd` the code
+* `nyt_comments_analysis.Rmd` the code
 * `processed_data.csv` the data, processed from @AashitaK 's NYT comments and article data https://www.kaggle.com/datasets/aashita/nyt-comments
 * `political_lexicon.csv` the political content lexicon, used to categorize a given article into political or non-political content
 * `final_report.pdf` our written final report
