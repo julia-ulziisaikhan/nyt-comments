@@ -10,7 +10,7 @@ We are interested in: (a) the text mining insights that can be gained from a NYT
 
 ## This repository includes...
 
-* `NYT Article and Comment Text Mining Project.Rmd` the code
+* `final_code.Rmd` the code
 * `processed_data.csv` the data, processed from @AashitaK 's NYT comments and article data https://www.kaggle.com/datasets/aashita/nyt-comments
 * `political_lexicon.csv` the political content lexicon, used to categorize a given article into political or non-political content
 * `final_report.pdf` our written final report
